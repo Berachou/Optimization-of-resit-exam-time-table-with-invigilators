@@ -1,0 +1,387 @@
+% =========================================================================
+% Resit Exam Timetable Optimizer - Complete Application
+% =========================================================================
+function runTimetableApp()
+    % This is the main function that launches the entire application.
+
+    % --- Environment Cleanup ---
+    clc;
+    close all;
+    fprintf('Launching Timetable Optimizer Application...\n');
+
+    % --- Application Startup Sequence ---
+    mainFig = createMainOptimizerWindow();
+    createLoginWindow(mainFig);
+
+    % =========================================================================
+    % Nested Function 1: Main Optimizer GUI
+    % =========================================================================
+    function fig = createMainOptimizerWindow()
+        % --- Data Storage ---
+        studentData = []; examData = []; venueData = [];
+        invigilatorData = []; examTimesData = []; isDataLoaded = false;
+
+        % --- Default Algorithm Parameters ---
+        GA_PARAMS.populationSize = 50; GA_PARAMS.maxGenerations = 100;
+        GA_PARAMS.crossoverRate = 0.8; GA_PARAMS.mutationRate = 0.1;
+        SA_PARAMS.maxIter = 20000; SA_PARAMS.initialTemp = 100;
+        SA_PARAMS.coolingRate = 0.999;
+
+        % --- Main Figure ---
+        fig = uifigure('Name', 'Resit Exam Timetable Optimizer', 'Position', [100 100 1200 750], 'Visible', 'off');
+        mainGrid = uigridlayout(fig, [1, 2]); % A single row for the main layout
+        mainGrid.ColumnWidth = {350, '1x'};
+
+        % --- Left Panel for Controls ---
+        leftPanel = uipanel(mainGrid, 'Title', 'Controls', 'FontSize', 14, 'BackgroundColor', [0.95 0.95 0.95]);
+        controlGrid = uigridlayout(leftPanel, [6, 2]);
+        controlGrid.RowHeight = {'fit', 'fit', 'fit', 'fit', 'fit', '1x'};
+        controlGrid.ColumnWidth = {'fit', '1x'};
+        controlGrid.Padding = [10 10 10 10];
+        controlGrid.RowSpacing = 10;
+        controlGrid.ColumnSpacing = 10;
+
+        % --- Logo ---
+        logoImage = uiimage(leftPanel, 'ImageSource', 'C:\Users\razer\Documents\Capstone Project\Image\Cyprus-International-University.png', ...
+            'Position', [0, 50, 350, 157], 'Visible', 'on'); % Adjusted size and position
+
+        % --- UI Components (Left Panel) ---
+        buttonColor = [0.6 0.7 0.9]; % Color for all buttons
+        importButton = uibutton(controlGrid, 'push', 'Text', ' Import Excel File', ...
+            'FontSize', 14, 'FontWeight', 'bold', 'ButtonPushedFcn', @importDataCallback, ...
+            'BackgroundColor', buttonColor, 'FontColor', 'k');
+        importButton.Layout.Column = [1, 2];
+
+        uilabel(controlGrid, 'Text', 'Algorithm:', 'FontSize', 12, 'HorizontalAlignment', 'right');
+        algoDropdown = uidropdown(controlGrid, 'Items', {'Genetic Algorithm', 'Simulated Annealing'}, ...
+            'FontSize', 12);
+
+        uilabel(controlGrid, 'Text', 'Increase Venue Capacity (25%):', 'FontSize', 12, 'HorizontalAlignment', 'right');
+        capacitySwitch = uiswitch(controlGrid, 'Items', {'Off', 'On'}, 'Value', 'Off');
+
+        runButton = uibutton(controlGrid, 'push', 'Text', ' Run Selected Optimization', ...
+            'FontSize', 14, 'FontWeight', 'bold', 'Enable', 'off', 'ButtonPushedFcn', @runOptimizationCallback, ...
+            'BackgroundColor', buttonColor, 'FontColor', 'k');
+        runButton.Layout.Column = [1, 2];
+
+        compareButton = uibutton(controlGrid, 'push', 'Text', ' Run Full Comparison', ...
+            'FontSize', 14, 'FontWeight', 'bold', 'Enable', 'off', 'ButtonPushedFcn', @runComparisonCallback, ...
+            'BackgroundColor', buttonColor, 'FontColor', 'k');
+        compareButton.Layout.Column = [1, 2];
+
+        statusLabel = uilabel(controlGrid, 'Text', 'Status: Application loaded. Please login.', ...
+            'VerticalAlignment', 'top');
+        statusLabel.Layout.Row = 6;
+        statusLabel.Layout.Column = [1, 2];
+
+        % --- Adjust grid spacing ---
+        controlGrid.RowSpacing = 15;  % This adds vertical space between rows
+
+        % --- Right Panel for Results ---
+        rightPanel = uipanel(mainGrid, 'Title', 'Results', 'FontSize', 14, 'BackgroundColor', [0.95 0.95 0.95]);
+        resultsGrid = uigridlayout(rightPanel, [2, 1]);
+        resultsGrid.RowHeight = {'1x', 120}; % Assign fixed height for comparison panel
+
+        % --- UI Components (Right Panel) ---
+        resultsTable = uitable(resultsGrid, 'FontSize', 11);
+        resultsTable.Layout.Row = 1;
+
+        comparePanel = uipanel(resultsGrid, 'Title', 'Algorithm Comparison', 'FontSize', 12, ...
+            'BackgroundColor', [0.9 0.9 0.9]);
+        comparePanel.Layout.Row = 2;
+
+        compareGrid = uigridlayout(comparePanel, [4, 3]); % Adjusted to 4 rows and 3 columns
+        compareGrid.ColumnWidth = {'fit', '1x', '1x'}; % Keep the first column 'fit'
+        compareGrid.RowHeight = {'fit', 'fit', 'fit', 'fit'}; % Ensure all rows fit the content
+        compareGrid.ColumnSpacing = 10; % Moderate spacing for aesthetics
+        compareGrid.RowSpacing = 5; % Reduced row spacing for a tighter layout
+
+        % Header Row
+        uilabel(compareGrid, 'Text', '', 'FontWeight', 'bold'); % Empty cell for alignment
+        uilabel(compareGrid, 'Text', 'Genetic Algorithm', 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+        uilabel(compareGrid, 'Text', 'Simulated Annealing', 'FontWeight', 'bold', 'HorizontalAlignment', 'center');
+
+        % Final Cost Row
+        uilabel(compareGrid, 'Text', 'Final Cost:', 'HorizontalAlignment', 'right', 'FontWeight', 'bold');
+        gaCostLabel = uilabel(compareGrid, 'Text', '0', 'HorizontalAlignment', 'center', 'FontSize', 14); % Placeholder for GA cost
+        saCostLabel = uilabel(compareGrid, 'Text', '0', 'HorizontalAlignment', 'center', 'FontSize', 14); % Placeholder for SA cost
+
+        % Time Taken Row
+        uilabel(compareGrid, 'Text', 'Time Taken (s):', 'HorizontalAlignment', 'right', 'FontWeight', 'bold');
+        gaTimeLabel = uilabel(compareGrid, 'Text', '', 'HorizontalAlignment', 'center', 'FontSize', 14); % Set to empty initially
+        saTimeLabel = uilabel(compareGrid, 'Text', '', 'HorizontalAlignment', 'center', 'FontSize', 14); % Set to empty initially
+
+        % Export Button
+        exportButton = uibutton(compareGrid, 'push', 'Text', 'Export', 'FontSize', 12, ...
+            'Enable', 'off', 'ButtonPushedFcn', @exportTableCallback, ...
+            'BackgroundColor', buttonColor, 'FontColor', 'k');
+        exportButton.Layout.Row = 1;
+        exportButton.Layout.Column = 5;
+
+        % --- Main UI Callback Functions ---
+        function importDataCallback(~, ~)
+            [file, path] = uigetfile('*.xlsx', 'Select the Timetabling Excel File');
+            if isequal(file, 0), statusLabel.Text = 'Status: File import canceled.'; return; end
+            fullFileName = fullfile(path, file);
+            statusLabel.Text = 'Status: Importing data... Please wait.'; drawnow;
+
+            try
+                studentData = readtable(fullFileName, 'Sheet', 'Students');
+                venueData = readtable(fullFileName, 'Sheet', 'Venues');
+                invigilatorData = readtable(fullFileName, 'Sheet', 'Invigilators');
+                examTimesData = readtable(fullFileName, 'Sheet', 'ExamTimes');
+
+                allSubjects = {};
+                for i = 1:height(studentData)
+                    subjects = strtrim(strsplit(studentData.ExamSubjects{i}, ','));
+                    allSubjects = [allSubjects, subjects];
+                end
+                uniqueSubjects = unique(allSubjects);
+                examData = table((1:length(uniqueSubjects))', uniqueSubjects', 'VariableNames', {'ExamID', 'ExamName'});
+
+                isDataLoaded = true;
+                runButton.Enable = 'on';
+                compareButton.Enable = 'on';
+                exportButton.Enable = 'off';
+                statusLabel.Text = sprintf('Status: Data loaded from %s. Ready to run.', file);
+                resultsTable.Data = examData;
+                gaCostLabel.Text = 'N/A'; saCostLabel.Text = 'N/A';
+                gaTimeLabel.Text = ''; saTimeLabel.Text = ''; % Set to empty initially
+                gaCostLabel.FontColor = 'k'; saCostLabel.FontColor = 'k';
+            catch ME
+                isDataLoaded = false; runButton.Enable = 'off'; compareButton.Enable = 'off';
+                statusLabel.Text = 'Status: Error loading file.';
+                uialert(fig, ME.message, 'Import Error');
+            end
+        end
+
+        function runOptimizationCallback(~, ~)
+            if ~isDataLoaded, return; end
+            disableControls();
+            
+            app.StatusLabel = statusLabel;
+            if strcmp(capacitySwitch.Value, 'On'), capacityMultiplier = 1.25; else, capacityMultiplier = 1.0; end
+            GA_PARAMS.capacityMultiplier = capacityMultiplier; SA_PARAMS.capacityMultiplier = capacityMultiplier;
+            
+            try
+                if strcmp(algoDropdown.Value, 'Genetic Algorithm')
+                    [finalTimetable, finalCost, elapsedTime] = runGA(app, studentData, examData, venueData, invigilatorData, examTimesData, GA_PARAMS);
+                    gaCostLabel.Text = sprintf('%.0f', finalCost);
+                    gaTimeLabel.Text = sprintf('%.2f s', elapsedTime); % Update here
+                else
+                    [finalTimetable, finalCost, elapsedTime] = runSA(app, studentData, examData, venueData, invigilatorData, examTimesData, SA_PARAMS);
+                    saCostLabel.Text = sprintf('%.0f', finalCost);
+                    saTimeLabel.Text = sprintf('%.2f s', elapsedTime); % Update here
+                end
+                statusLabel.Text = ['Status: Optimization Complete! Displaying final timetable.'];
+                resultsTable.Data = finalTimetable;
+                exportButton.Enable = 'on';
+            catch ME
+                statusLabel.Text = 'Status: An error occurred during optimization.';
+                uialert(fig, ME.message, 'Optimization Error');
+            end
+            enableControls();
+        end
+
+        function runComparisonCallback(~,~)
+            if ~isDataLoaded, return; end
+            disableControls();
+            
+            app.StatusLabel = statusLabel;
+            if strcmp(capacitySwitch.Value, 'On'), capacityMultiplier = 1.25; else, capacityMultiplier = 1.0; end
+            GA_PARAMS.capacityMultiplier = capacityMultiplier; SA_PARAMS.capacityMultiplier = capacityMultiplier;
+
+            try
+                [gaTimetable, gaCost, gaTime] = runGA(app, studentData, examData, venueData, invigilatorData, examTimesData, GA_PARAMS);
+                gaCostLabel.Text = sprintf('%.0f', gaCost);
+                gaTimeLabel.Text = sprintf('%.2f s', gaTime); % Update here
+                
+                [saTimetable, saCost, saTime] = runSA(app, studentData, examData, venueData, invigilatorData, examTimesData, SA_PARAMS);
+                saCostLabel.Text = sprintf('%.0f', saCost);
+                saTimeLabel.Text = sprintf('%.2f s', saTime); % Update here
+
+                if gaCost <= saCost
+                    resultsTable.Data = gaTimetable;
+                    gaCostLabel.FontColor = [0 0.6 0]; % Green
+                    saCostLabel.FontColor = 'k'; % Black
+                    statusLabel.Text = 'Status: Comparison complete. Genetic Algorithm produced the best or equal result.';
+                else
+                    resultsTable.Data = saTimetable;
+                    saCostLabel.FontColor = [0 0.6 0]; % Green
+                    gaCostLabel.FontColor = 'k'; % Black
+                    statusLabel.Text = 'Status: Comparison complete. Simulated Annealing produced the best result.';
+                end
+                exportButton.Enable = 'on';
+            catch ME
+                statusLabel.Text = 'Status: An error occurred during comparison.';
+                uialert(fig, ME.message, 'Comparison Error');
+            end
+            enableControls();
+        end
+        
+        function disableControls()
+            importButton.Enable = 'off'; runButton.Enable = 'off'; compareButton.Enable = 'off'; exportButton.Enable = 'off'; drawnow;
+        end
+
+        function enableControls()
+            importButton.Enable = 'on'; runButton.Enable = 'on'; compareButton.Enable = 'on';
+        end
+
+        function exportTableCallback(~, ~)
+            tableData = resultsTable.Data;
+            if isempty(tableData), statusLabel.Text = 'Status: No data to export.'; return; end
+            timestamp = datestr(now, 'yyyy-mm-dd_HHMMSS');
+            fileName = sprintf('Generated_Timetable_%s.xlsx', timestamp);
+            try
+                statusLabel.Text = sprintf('Status: Exporting to %s...', fileName); drawnow;
+                writetable(tableData, fileName);
+                statusLabel.Text = sprintf('Status: Timetable successfully exported to %s.', fileName);
+            catch ME
+                statusLabel.Text = 'Status: Error exporting file.';
+                uialert(fig, ME.message, 'Export Error');
+            end
+        end
+    end
+
+    % =========================================================================
+    % Nested Function 2: Login Window GUI
+    % =========================================================================
+    function createLoginWindow(mainAppFigure)
+        dsnName = 'CapstoneLogin'; dbUser = 'root'; dbPass = '';
+        loginFig = uifigure('Name', 'Administrator Login', 'Position', [400 400 400 250], 'WindowStyle', 'modal');
+        loginFig.CloseRequestFcn = @(~,~) exitApp();
+        loginGrid = uigridlayout(loginFig, [4, 2]);
+        loginGrid.RowHeight = {'fit', 'fit', 'fit', 'fit'};
+        loginGrid.ColumnWidth = {'fit', '1x'};
+        loginGrid.Padding = [15 15 15 15];
+        loginGrid.RowSpacing = 15;
+        loginGrid.ColumnSpacing = 10;
+        
+        % --- Improved Aesthetics for Login UI ---
+        uilabel(loginGrid, 'Text', 'Username:', 'HorizontalAlignment', 'right', 'FontSize', 12);
+        usernameField = uieditfield(loginGrid, 'Value', 'admin', 'FontSize', 12);
+        
+        uilabel(loginGrid, 'Text', 'Password:', 'HorizontalAlignment', 'right', 'FontSize', 12);
+        passwordField = uieditfield(loginGrid, 'text', 'FontSize', 12);
+        
+        loginStatusLabel = uilabel(loginGrid, 'Text', 'Please enter your credentials.', 'HorizontalAlignment', 'center');
+        loginStatusLabel.Layout.Column = [1, 2];
+        
+        loginButton = uibutton(loginGrid, 'push', 'Text', 'Login', 'FontSize', 14, 'FontWeight', 'bold', 'ButtonPushedFcn', @loginCallback, ...
+            'BackgroundColor', [0.6 0.7 0.9], 'FontColor', 'k');
+        loginButton.Layout.Column = [1, 2];
+
+        function loginCallback(~, ~)
+            username = usernameField.Value; 
+            password = passwordField.Value;
+
+            if isempty(username) || isempty(password)
+                loginStatusLabel.Text = 'Username/Password cannot be empty.'; 
+                loginStatusLabel.FontColor = 'r'; 
+                return; 
+            end
+
+            loginStatusLabel.Text = 'Authenticating...'; 
+            loginStatusLabel.FontColor = 'k'; 
+            drawnow;
+
+            try
+                conn = database(dsnName, dbUser, dbPass);
+                if ~isempty(conn.Message), error(conn.Message); end
+                
+                % Check if the login is for the developer
+                queryDev = "SELECT username FROM developer WHERE username = 'developer' AND password_hash = '" + string(password) + "'";
+                dataDev = fetch(conn, queryDev);
+                
+                % Check for normal user login
+                query = "SELECT username FROM administrators WHERE username = '" + string(username) + "' AND password_hash = '" + string(password) + "'";
+                data = fetch(conn, query);
+                close(conn);
+                
+                if height(dataDev) == 1
+                    loginStatusLabel.Text = 'Developer Login Successful!'; 
+                    loginStatusLabel.FontColor = [0 0.6 0]; 
+                    drawnow;
+                    pause(1); 
+                    delete(loginFig); 
+                    mainAppFigure.Visible = 'on';
+
+                    % Add developer button to main figure
+                    developerButton = uibutton(mainAppFigure, 'push', 'Text', 'Open MATLAB Editor', ...
+                                                'FontSize', 14, 'ButtonPushedFcn', @openEditorCallback, ...
+                                                'BackgroundColor', [0.6 0.7 0.9], 'FontColor', 'k');
+                    developerButton.Position = [50, 400, 150, 30]; % Position of the button
+
+                elseif height(data) == 1
+                    loginStatusLabel.Text = 'Login Successful!'; 
+                    loginStatusLabel.FontColor = [0 0.6 0]; 
+                    drawnow;
+                    pause(1); 
+                    delete(loginFig); 
+                    mainAppFigure.Visible = 'on';
+                else
+                    loginStatusLabel.Text = 'Invalid username or password.'; 
+                    loginStatusLabel.FontColor = 'r';
+                end
+            catch ME
+                loginStatusLabel.Text = 'Error: Database connection failed.'; 
+                loginStatusLabel.FontColor = 'r';
+                uialert(loginFig, ['Connection failed. Details: ' ME.message], 'Database Error');
+            end
+        end
+
+        function openEditorCallback(~, ~)
+            edit('runTimetableApp.m'); % Open the main script in the MATLAB Editor
+        end
+
+       
+
+        function exitApp()
+            fprintf('Login canceled by user. Exiting application.\n');
+            delete(loginFig); delete(mainAppFigure);
+        end
+    end
+
+end
+
+
+function finalTable = formatTimetable(timetable, examData, examTimes, venueData, invigilatorData, students)
+    numExams = height(examData);
+    finalTable = table('Size', [numExams, 7], ...
+        'VariableTypes', {'string', 'string', 'string', 'double', 'string', 'string', 'string'}, ...
+        'VariableNames', {'Day', 'Session', 'Time', 'Students', 'Exam', 'Venue', 'Invigilator'});
+
+    % For each exam
+    for i = 1:numExams
+        ts_idx = timetable(i, 1); % Timeslot ID
+        v_idx = timetable(i, 2);  % Venue ID
+        inv_idx = timetable(i, 3); % Invigilator ID
+
+        % ==== Time Format Calculation ====
+        if ts_idx >= 1 && ts_idx <= height(examTimes)
+            finalTable.Day(i) = examTimes.Day{ts_idx};
+            finalTable.Session(i) = examTimes.Session{ts_idx};
+        else
+            finalTable.Day(i) = "Invalid";
+            finalTable.Session(i) = "Invalid";
+        end
+
+        % Start at 08:30, add 2 hours for each new timeslot
+        baseTime = datetime('08:30', 'InputFormat', 'HH:mm');
+        thisStart = baseTime + minutes((ts_idx - 1) * 120);
+        thisEnd = thisStart + minutes(60); % 1-hour exam duration
+
+        % Format in 24-hour style
+        startTimeStr = datestr(thisStart, 'HH:MM');
+        endTimeStr = datestr(thisEnd, 'HH:MM');
+        finalTable.Time(i) = sprintf('%s - %s', startTimeStr, endTimeStr);
+
+        % ==== Other Info ====
+        finalTable.Students(i) = sum(students(:, i));
+        finalTable.Exam(i) = examData.ExamName{i};
+        finalTable.Venue(i) = venueData.VenueName{v_idx};
+        finalTable.Invigilator(i) = invigilatorData.InvigilatorName{inv_idx};
+    end
+
+    finalTable = sortrows(finalTable, {'Day', 'Session'});
+end
